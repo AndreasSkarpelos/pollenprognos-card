@@ -45,6 +45,10 @@ class PollenPrognosCard extends LitElement {
       console.debug("Days to show:", this.days_to_show);
       console.debug("Display columns:", this.displayCols);
     }
+    if (this.config.minimal) {
+      this._updateMinimalGlance();
+    }
+
     this.requestUpdate();
   }
 
@@ -192,6 +196,7 @@ class PollenPrognosCard extends LitElement {
       displayCols: { state: true },
       header: { state: true },
       tapAction: {},
+      _minimalGlanceCard: { type: Object },
     };
   }
 
@@ -279,6 +284,8 @@ class PollenPrognosCard extends LitElement {
     if (this._hass) {
       this.hass = this._hass;
     }
+    // Bygg glance-elementet när config ändras
+    // this._updateMinimalGlance();
   }
 
   set hass(hass) {
@@ -739,6 +746,99 @@ class PollenPrognosCard extends LitElement {
     // this.requestUpdate();
   }
 
+  async _updateMinimalGlance() {
+    if (!this.config?.minimal) {
+      this._minimalGlanceCard = null;
+      return;
+    }
+
+    if (this.debug) {
+      console.debug("[_updateMinimalGlance] sensors:", this.sensors);
+    }
+
+    if (this.debug) {
+      for (const sensor of this.sensors) {
+        console.debug(
+          "[_updateMinimalGlance] sensor.entity_id:",
+          sensor.entity_id,
+        );
+      }
+    }
+    // if (this.debug) {
+    for (const sensor of this.sensors) {
+      console.debug(
+        "Glance entity_picture:",
+        this._getImageSrc(sensor.allergenReplaced, sensor.day0?.state),
+      );
+    }
+    // }
+
+    const entities = (this.sensors || [])
+      .filter((sensor) => !!sensor.entity_id)
+      .map((sensor) => {
+        let label = "";
+        if (this.config?.show_text_allergen) {
+          label += this.config?.allergens_abbreviated
+            ? sensor.allergenShort ?? ""
+            : sensor.allergenCapitalized ?? "";
+        }
+        // Om du vill ha samma label som i _renderMinimalHtml, bygg på label här
+
+        // Lägg till debug:
+        if (this.debug) {
+          console.debug(
+            "Glance entity_picture:",
+            this._getImageSrc(sensor.allergenReplaced, sensor.day0?.state),
+            "for",
+            sensor.allergenReplaced,
+            sensor.day0?.state,
+          );
+        }
+
+        return {
+          entity: sensor.entity_id,
+          name: label,
+          entity_picture: this._getImageSrc(
+            sensor.allergenReplaced,
+            sensor.day0?.state,
+          ),
+        };
+      });
+    if (!entities.length) {
+      this._minimalGlanceCard = html`
+        <div class="card-content">
+          <div class="card-error">
+            ${this._t("card.error_filtered_sensors")}
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const config = {
+      type: "glance",
+      entities,
+      show_name: true,
+      show_state: true,
+      columns: Math.min(entities.length, 4),
+    };
+
+    const helpers = await this._getHelpers();
+    const glance = helpers.createCardElement(config);
+    glance.hass = this.hass;
+    this._minimalGlanceCard = html`
+      ${this.header ? html`<div class="card-header">${this.header}</div>` : ""}
+      <div class="card-content">${glance}</div>
+    `;
+    this.requestUpdate();
+  }
+  async _getHelpers() {
+    if (!window.loadCardHelpers) {
+      await customElements.whenDefined("hui-view");
+    }
+    return window.loadCardHelpers();
+  }
+
   _renderMinimalHtml() {
     return html`
       ${this.header ? html`<div class="card-header">${this.header}</div>` : ""}
@@ -934,7 +1034,8 @@ class PollenPrognosCard extends LitElement {
       cardContent = html`<div class="card-error">${errorMsg} (${name})</div>`;
     } else {
       cardContent = this.config.minimal
-        ? this._renderMinimalHtml()
+        ? // ? this._renderMinimalHtml()
+          this._minimalGlanceCard
         : this._renderNormalHtml();
     }
 
